@@ -23,8 +23,9 @@ const app = express();
 app.use(express.json({ limit: '100mb' })); 
 app.use(cookieParser());
 
+
 const allowedOrigins = [
-  'http://localhost:3000', 
+  'http://localhost:3000', // For local development
   'https://secure-fileshare.netlify.app' 
 ];
 
@@ -265,7 +266,8 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
     try {
-        const { username, password }.body;
+        // FIX: Corrected the destructuring syntax.
+        const { username, password } = req.body;
         const user = await User.findOne({ username });
         if (!user || !(await bcrypt.compare(password, user.password))) {
             return res.status(401).json({ message: 'Invalid credentials.' });
