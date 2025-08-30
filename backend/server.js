@@ -20,11 +20,27 @@ const ShortUrl = require('./models/ShortUrl');
 const User = require('./models/User');
 
 const app = express();
-// FIX: Increase the JSON body limit to 100mb to handle larger file content for analysis,
-// matching the frontend's 100MB upload limit.
 app.use(express.json({ limit: '100mb' })); 
 app.use(cookieParser());
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000', credentials: true }));
+
+const allowedOrigins = [
+  'http://localhost:3000', 
+  'https://secure-fileshare.netlify.app' 
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('This origin is not allowed by CORS policy.'));
+    }
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
+
 
 mongoose.connect(process.env.MONGO_URI).then(() => console.log('MongoDB connected.')).catch(err => console.error('MongoDB Connection Error:', err));
 
@@ -39,8 +55,6 @@ const upload = multer({
     s3: s3,
     bucket: process.env.SUPABASE_BUCKET_NAME,
     key: function (req, file, cb) {
-      // FIX: Sanitize the original filename to remove invalid characters for S3 keys.
-      // This prevents the "InvalidKey" error for files with special characters like [].
       const sanitizedOriginalName = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '');
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
       cb(null, `uploads/${uniqueSuffix}-${sanitizedOriginalName}`);
@@ -141,8 +155,6 @@ app.post('/api/files/analyze', async (req, res) => {
 
         const result = await model.generateContent(prompt);
         const response = await result.response;
-        // FIX: Add a try-catch block specifically for parsing the AI's response
-        // to prevent server crashes if the response is not valid JSON.
         try {
             const text = response.text().replace(/```json/g, '').replace(/```/g, '');
             const analysis = JSON.parse(text);
@@ -253,7 +265,7 @@ app.post('/api/auth/register', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
     try {
-        const { username, password } = req.body;
+        const { username, password }.body;
         const user = await User.findOne({ username });
         if (!user || !(await bcrypt.compare(password, user.password))) {
             return res.status(401).json({ message: 'Invalid credentials.' });
@@ -285,3 +297,4 @@ const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+
