@@ -1,11 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { v4 as uuidv4 } from 'uuid'; // Now used for guest IDs
+import { v4 as uuidv4 } from 'uuid';
 
-// --- API Configuration ---
-const API_BASE_URL = 'http://localhost:5001';
-const apiKey = "YOUR_GEMINI_API_KEY"; // Replace with your key
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001';
 
-// --- Background Component ---
+
 const AnimatedBackground = () => (
   <div className="fixed inset-0 -z-10 h-full w-full bg-slate-950">
     <div className="absolute bottom-0 left-[-20%] right-0 top-[-10%] h-[500px] w-[500px] rounded-full bg-[radial-gradient(circle_farthest-side,rgba(96,165,250,0.1),rgba(255,255,255,0))] animate-blob-one"></div>
@@ -13,7 +11,6 @@ const AnimatedBackground = () => (
   </div>
 );
 
-// --- Helper & Icon Components ---
 const Icon = ({ path, className = "w-6 h-6" }) => (
   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
     <path strokeLinecap="round" strokeLinejoin="round" d={path} />
@@ -63,8 +60,23 @@ function App() {
   
   const [user, setUser] = useState(null); 
   const [authPage, setAuthPage] = useState('login');
+  
+  const [isMammothLoaded, setIsMammothLoaded] = useState(false);
 
   useEffect(() => {
+    const scriptId = 'mammoth-script';
+    if (!document.getElementById(scriptId)) {
+        const script = document.createElement('script');
+        script.id = scriptId;
+        script.src = "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.7.1/mammoth.browser.min.js";
+        script.async = true;
+        script.onload = () => setIsMammothLoaded(true);
+        script.onerror = () => console.error("Mammoth.js script failed to load.");
+        document.body.appendChild(script);
+    } else if (window.mammoth) {
+        setIsMammothLoaded(true);
+    }
+
     const checkUserSession = async () => {
         try {
             const response = await fetch(`${API_BASE_URL}/api/auth/me`, { credentials: 'include' });
@@ -87,6 +99,7 @@ function App() {
         }
     };
     checkUserSession();
+    
   }, []);
   
   const handleLogout = async () => {
@@ -98,7 +111,6 @@ function App() {
   };
   
   const handleGuestLogin = () => {
-    // Generate a new, temporary guest ID for this session only.
     const guestId = uuidv4();
     setUser({ isGuest: true, id: guestId });
   };
@@ -112,11 +124,11 @@ function App() {
     }
     switch (page) {
       case 'upload':
-        return <UploadForm user={user} onUploadSuccess={() => setPage('dashboard')} />;
+        return <UploadForm user={user} isMammothLoaded={isMammothLoaded} />;
       case 'dashboard':
         return <Dashboard user={user} />;
       default:
-        return <UploadForm user={user} onUploadSuccess={() => setPage('dashboard')} />;
+        return <UploadForm user={user} isMammothLoaded={isMammothLoaded} />;
     }
   };
 
@@ -311,8 +323,7 @@ function RegisterForm({ onAuthSuccess }) {
     );
 }
 
-
-function UploadForm({ user, onUploadSuccess }) {
+function UploadForm({ user, isMammothLoaded }) {
   const [file, setFile] = useState(null);
   const [expiresInHours, setExpiresInHours] = useState(24);
   const [downloadLimit, setDownloadLimit] = useState('');
@@ -321,18 +332,26 @@ function UploadForm({ user, onUploadSuccess }) {
   const [error, setError] = useState('');
   const [generatedLink, setGeneratedLink] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [isGeneratingPassword, setIsGeneratingPassword] = useState(false);
-  const [isDraftingMessage, setIsDraftingMessage] = useState(false);
-  const [shareMessage, setShareMessage] = useState('');
   const [isCopied, setIsCopied] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const spinnerIcon = <Icon path="M16.023 9.348h4.992v-.001a10.987 10.987 0 00-2.3-5.013l-3.21 2.71a1.014 1.014 0 01-1.487-.02L13 6.028v4.992a1.014 1.014 0 01-.02 1.487l2.71 3.21a10.987 10.987 0 005.013-2.3v-.001h-4.992a1.014 1.014 0 01-1.487.02l-2.71-3.21a1.014 1.014 0 01.02-1.487l3.21-2.71a1.014 1.014 0 011.487.02z M9.348 16.023v4.992h-.001a10.987 10.987 0 00-5.013-2.3l2.71-3.21a1.014 1.014 0 01.02-1.487l-3.21-2.71a10.987 10.987 0 00-2.3 5.013v.001h4.992a1.014 1.014 0 01-.02 1.487l-2.71 2.71a1.014 1.014 0 01-1.487-.02h-4.992v-.001a10.987 10.987 0 002.3-5.013l3.21-2.71a1.014 1.014 0 011.487.02L11 17.972v-4.992a1.014 1.014 0 01.02-1.487l-2.71-3.21a10.987 10.987 0 00-5.013 2.3v.001h4.992a1.014 1.014 0 011.487-.02l2.71 3.21a1.014 1.014 0 01-.02 1.487l-3.21 2.71a1.014 1.014 0 01-1.487.02z" className="animate-spin h-5 w-5" />;
+  const spinnerIcon = <Icon path="M21 12a9 9 0 11-6.219-8.56" className="animate-spin h-5 w-5" />;
 
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
-    if (selectedFile && selectedFile.size > 100 * 1024 * 1024) { setError("File size cannot exceed 100MB."); setFile(null); } 
-    else { setFile(selectedFile); setError(''); }
+    setAnalysisResult(null); 
+    setGeneratedLink('');
+    if (selectedFile && selectedFile.size > 100 * 1024 * 1024) { 
+        setError("File size cannot exceed 100MB."); 
+        setFile(null); 
+    } else { 
+        setFile(selectedFile); 
+        setError(''); 
+    }
   };
 
   const handleDragEvents = (e, over) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(over); };
@@ -341,11 +360,85 @@ function UploadForm({ user, onUploadSuccess }) {
     const droppedFile = e.dataTransfer.files[0];
     if (droppedFile) { handleFileChange({ target: { files: [droppedFile] }}); }
   };
+  
+  const handleAnalyze = () => {
+    if (!file) return;
+    setIsAnalyzing(true);
+    setAnalysisResult(null);
+    setError('');
+
+    const performAnalysisRequest = async (content) => {
+        if (!content) {
+             setError("Could not extract text from the file for analysis.");
+             setIsAnalyzing(false);
+             return;
+        }
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/files/analyze`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content }),
+            });
+            const result = await response.json();
+            if (response.ok && result.success) {
+                setAnalysisResult(result.analysis);
+                if (result.analysis.pii_types && result.analysis.pii_types.length > 0) {
+                    setIsModalOpen(true);
+                } else {
+                    setError('Analysis complete. No sensitive information found.');
+                }
+            } else {
+                throw new Error(result.message || 'Analysis failed with AI.');
+            }
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setIsAnalyzing(false);
+        }
+    };
+
+    const reader = new FileReader();
+    const isDocx = file.name.toLowerCase().endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+    if (isDocx) {
+        if (!isMammothLoaded || !window.mammoth) {
+            setError("The .docx analysis library is not ready. Please try again.");
+            setIsAnalyzing(false);
+            return;
+        }
+        reader.onload = (e) => {
+            const arrayBuffer = e.target.result;
+            window.mammoth.extractRawText({ arrayBuffer })
+                .then(result => {
+                    performAnalysisRequest(result.value);
+                })
+                .catch(err => {
+                    setError("Could not read .docx file. It may be corrupted or password-protected.");
+                    setIsAnalyzing(false);
+                });
+        };
+        reader.onerror = () => {
+            setError("Failed to read the .docx file from your device.");
+            setIsAnalyzing(false);
+        };
+        reader.readAsArrayBuffer(file);
+    } else { // Handle plain text files
+        reader.onload = (e) => {
+            performAnalysisRequest(e.target.result);
+        };
+        reader.onerror = () => {
+            setError("Could not read the file. It might be corrupted.");
+            setIsAnalyzing(false);
+        };
+        reader.readAsText(file);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!file) { setError('Please select a file to upload.'); return; }
-    setError(''); setIsLoading(true); setGeneratedLink(''); setShareMessage('');
+    setError(''); setIsLoading(true); setGeneratedLink('');
+    
     const formData = new FormData();
     formData.append('file', file);
     formData.append('expiresInHours', expiresInHours);
@@ -356,10 +449,16 @@ function UploadForm({ user, onUploadSuccess }) {
     try {
       const fetchOptions = { method: 'POST', body: formData };
       if (!user.isGuest) { fetchOptions.credentials = 'include'; }
+      
       const response = await fetch(`${API_BASE_URL}/api/upload`, fetchOptions);
       const result = await response.json();
-      if (response.ok && result.success) { setGeneratedLink(result.link); } 
-      else { setError(result.message || 'File upload failed.'); }
+      
+      if (response.ok && result.success) { 
+          setGeneratedLink(result.link); 
+          setFile(null);
+      } else { 
+          setError(result.message || 'File upload failed.'); 
+      }
     } catch (err) {
       setError('Could not connect to the server.');
     } finally {
@@ -367,17 +466,37 @@ function UploadForm({ user, onUploadSuccess }) {
     }
   };
   
-  const callGeminiWithExponentialBackoff = async (prompt, maxRetries = 5) => { /* ... */ };
-  const handleGeneratePassword = async () => { /* ... */ };
-  const handleDraftMessage = async () => { /* ... */ };
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text).then(() => {
         setIsCopied(true);
         setTimeout(() => setIsCopied(false), 2000);
     }).catch(err => console.error('Failed to copy: ', err));
   };
+  
+  const isDocx = file && (file.name.toLowerCase().endsWith('.docx'));
+
+  // FIX: More robust logic to determine if the analysis button should be shown.
+  const isAnalyzableFile = file && (
+    (file.type || '').startsWith('text/') || 
+    (file.type || '').includes('json') || // More lenient check for JSON
+    ['.txt', '.json', '.log', '.docx'].some(ext => file.name.toLowerCase().endsWith(ext))
+  );
+  
+  const isAnalyzeButtonDisabled = isAnalyzing || (isDocx && !isMammothLoaded);
+
 
   return (
+    <>
+    {isModalOpen && analysisResult && (
+        <PrivacyWarningModal 
+            piiTypes={analysisResult.pii_types} 
+            onClose={() => setIsModalOpen(false)}
+            onSecure={() => { 
+                setIsModalOpen(false);
+                setTimeout(() => document.getElementById('password')?.focus(), 100);
+            }}
+        />
+    )}
     <div className="w-full max-w-2xl mx-auto bg-slate-800/50 p-6 sm:p-8 rounded-2xl shadow-xl border border-slate-700">
       <form onSubmit={handleSubmit} className="space-y-6">
         <div>
@@ -391,7 +510,7 @@ function UploadForm({ user, onUploadSuccess }) {
             <div className="space-y-1 text-center">
               <Icon path="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" className="mx-auto h-12 w-12 text-slate-500" />
               <div className="flex text-sm text-slate-300">
-                <label htmlFor="file-upload" className="relative cursor-pointer bg-transparent rounded-md font-semibold text-sky-400 hover:text-sky-300 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500">
+                <label htmlFor="file-upload" className="relative cursor-pointer bg-transparent rounded-md font-semibold text-sky-400 hover:text-sky-300 focus-within:outline-none">
                   <span>Choose a file</span>
                   <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileChange} />
                 </label>
@@ -400,59 +519,55 @@ function UploadForm({ user, onUploadSuccess }) {
               <p className="text-xs text-slate-400">{file ? `${file.name}` : 'Up to 100MB'}</p>
             </div>
           </div>
+          {isAnalyzableFile && (
+            <div className="mt-4">
+                <button type="button" onClick={handleAnalyze} disabled={isAnalyzeButtonDisabled} className="w-full flex justify-center items-center gap-2 py-2 px-4 border border-slate-600 rounded-md shadow-sm text-sm font-medium text-slate-200 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                    {isAnalyzing ? spinnerIcon : <Icon path="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" className="w-5 h-5"/>}
+                    {isDocx && !isMammothLoaded ? 'Preparing for .docx...' : (isAnalyzing ? 'Analyzing...' : 'Analyze for Privacy Risks')}
+                </button>
+                {isDocx && !isMammothLoaded && <p className="text-xs text-slate-400 mt-1 text-center">Please wait, analysis engine is loading.</p>}
+            </div>
+          )}
         </div>
 
         <div className="space-y-4 rounded-xl bg-slate-700/50 p-4">
             <h3 className="font-semibold text-slate-200">Link Options</h3>
             <div>
               <label htmlFor="expires" className="block text-sm font-medium text-slate-300">Expires In</label>
-              <div className="relative mt-1">
-                <select id="expires" value={expiresInHours} onChange={e => setExpiresInHours(e.target.value)} className="appearance-none w-full pl-3 pr-8 py-2 text-base bg-slate-900 border border-slate-600 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md shadow-sm cursor-pointer">
-                  <option value={1}>1 Hour</option>
-                  <option value={24}>24 Hours</option>
-                  <option value={72}>3 Days</option>
-                  <option value={168}>7 Days</option>
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
-                  <Icon path="M8.25 15L12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9" className="w-5 h-5" />
-                </div>
-              </div>
+              <select id="expires" value={expiresInHours} onChange={e => setExpiresInHours(e.target.value)} className="mt-1 appearance-none w-full pl-3 pr-8 py-2 bg-slate-900 border border-slate-600 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm rounded-md shadow-sm cursor-pointer">
+                <option value={1}>1 Hour</option>
+                <option value={24}>24 Hours</option>
+                <option value={72}>3 Days</option>
+                <option value={168}>7 Days</option>
+              </select>
             </div>
-
             <div>
               <label htmlFor="limit" className="block text-sm font-medium text-slate-300">Download Limit</label>
-              <input type="number" id="limit" value={downloadLimit} onChange={e => setDownloadLimit(e.target.value)} placeholder="No limit" className="mt-1 bg-slate-900 focus:ring-sky-500 focus:border-sky-500 block w-full shadow-sm sm:text-sm border-slate-600 rounded-md" />
+              <input type="number" id="limit" value={downloadLimit} onChange={e => setDownloadLimit(e.target.value)} placeholder="No limit" className="mt-1 bg-slate-900 focus:ring-sky-500 focus:border-sky-500 block w-full shadow-sm sm:text-sm border-slate-600 rounded-md" min="1"/>
             </div>
-
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-slate-300">Password</label>
-              <div className="flex items-center gap-2 mt-1">
-                <div className="relative flex-grow">
+              <label htmlFor="password" className="block text-sm font-medium text-slate-300">Password (Recommended)</label>
+              <div className="relative mt-1">
                   <input type={showPassword ? 'text' : 'password'} id="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Optional" className="focus:ring-sky-500 focus:border-sky-500 bg-slate-900 block w-full shadow-sm sm:text-sm border-slate-600 rounded-md" />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-sm leading-5">
-                    <Icon path={showPassword ? "M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.243 4.243L6.228 6.228" : "M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z M15 12a3 3 0 11-6 0 3 3 0 016 0z"} className="h-5 w-5 text-slate-500" />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-sm text-slate-400">
+                    <Icon path={showPassword ? "M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.243 4.243L6.228 6.228" : "M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z M15 12a3 3 0 11-6 0 3 3 0 016 0z"} className="h-5 w-5" />
                   </button>
-                </div>
-                <button type="button" onClick={handleGeneratePassword} disabled={isGeneratingPassword} className="px-3 py-2 border border-transparent text-sm font-medium rounded-md text-sky-300 bg-sky-500/20 hover:bg-sky-500/30 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 disabled:opacity-50 flex items-center">
-                  {isGeneratingPassword ? spinnerIcon : <Icon path="M9.922 10.232a.75.75 0 01.933-.217l3 1.5a.75.75 0 010 1.368l-3 1.5a.75.75 0 01-.933-.217V10.232z" className="w-5 h-5 mr-1"/>}
-                  Generate
-                </button>
               </div>
             </div>
         </div>
 
-        <button type="submit" disabled={isLoading || !file} className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-lg text-base font-semibold text-white bg-sky-600 hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 disabled:opacity-50 disabled:bg-sky-400 transition-all duration-200">
+        <button type="submit" disabled={isLoading || !file} className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-lg text-base font-semibold text-white bg-sky-600 hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 disabled:opacity-50 disabled:bg-slate-500 transition-all duration-200">
            {isLoading && <span className="mr-2">{spinnerIcon}</span>}
           {isLoading ? 'Uploading...' : 'Generate Secure Link'}
         </button>
       </form>
       
-      {error && <div className="mt-4"><MessageBox message={error} type="error" onDismiss={() => setError('')} /></div>}
+      {error && <div className="mt-4"><MessageBox message={error} type={error.includes('No sensitive') ? 'success' : 'error'} onDismiss={() => setError('')} /></div>}
 
       {generatedLink && (
         <div className="mt-6 p-4 bg-slate-700/50 rounded-xl border border-slate-700">
             <h3 className="text-lg font-semibold text-slate-200">Link Generated!</h3>
-            <p className="text-sm text-slate-400 mb-3">Anyone with this link can download your file.</p>
+            <p className="text-sm text-slate-400 mb-3">Share this link to allow others to download your file.</p>
             <div className="mt-2 flex items-center gap-2 bg-slate-900 p-2 border border-slate-600 rounded-md shadow-sm">
                 <input type="text" readOnly value={generatedLink} className="flex-grow p-1 border-none focus:ring-0 text-sm text-slate-300 bg-transparent" />
                 <button 
@@ -462,29 +577,24 @@ function UploadForm({ user, onUploadSuccess }) {
                   {isCopied ? 'Copied!' : 'Copy'}
                 </button>
             </div>
-            <div className="mt-4">
-                <button onClick={handleDraftMessage} disabled={isDraftingMessage} className="w-full flex justify-center items-center py-2 px-4 border border-slate-600 rounded-md shadow-sm text-sm font-medium text-slate-200 bg-slate-900 hover:bg-slate-700 disabled:opacity-50">
-                     {isDraftingMessage ? spinnerIcon : <Icon path="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM18 13.5a3.375 3.375 0 00-3.375 3.375V18a3.375 3.375 0 003.375 3.375h1.5a1.125 1.125 0 011.125 1.125v1.5a3.375 3.375 0 003.375-3.375V16.5a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5A3.375 3.375 0 0018 13.5z" className="w-5 h-5 mr-2" />}
-                    AI Draft Message
-                </button>
-            </div>
-            {shareMessage && (
-                <textarea readOnly value={shareMessage} rows="4" className="mt-2 w-full p-2 border border-slate-600 rounded-md text-sm bg-slate-900"></textarea>
-            )}
         </div>
       )}
     </div>
+    </>
   );
 }
 
 function Dashboard({ user }) {
   const [files, setFiles] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
 
   const fetchFiles = useCallback(async () => {
     setIsLoading(true);
+    setError('');
     let url = `${API_BASE_URL}/api/files`;
     if (user.isGuest) { url += `?userId=${user.id}`; }
+    
     try {
         const fetchOptions = {};
         if (!user.isGuest) { fetchOptions.credentials = 'include'; }
@@ -492,8 +602,9 @@ function Dashboard({ user }) {
         if (!response.ok) { throw new Error('Failed to fetch files'); }
         const userFiles = await response.json();
         setFiles(userFiles);
-    } catch (error) {
-        console.error("Failed to fetch dashboard files", error);
+    } catch (err) {
+        console.error("Failed to fetch dashboard files", err);
+        setError(err.message || "Could not load your files.");
         setFiles([]);
     } finally {
         setIsLoading(false);
@@ -512,6 +623,7 @@ function Dashboard({ user }) {
   };
 
   if (isLoading) { return <Spinner />; }
+  if (error) { return <MessageBox message={error} type="error" />; }
 
   return (
     <div className="w-full max-w-6xl mx-auto bg-slate-800/50 p-6 sm:p-8 rounded-2xl shadow-xl border border-slate-700">
@@ -572,7 +684,7 @@ function DownloadPage({ fileId }) {
 
     useEffect(() => {
         const fetchMetadata = async () => {
-            if (!fileId) { setError("No file ID provided."); setIsLoading(false); return; }
+            if (!fileId) { setError("No file ID provided in URL."); setIsLoading(false); return; }
             try {
                 const response = await fetch(`${API_BASE_URL}/api/files/${fileId}/meta`);
                 const data = await response.json();
@@ -599,6 +711,7 @@ function DownloadPage({ fileId }) {
             });
             const data = await response.json();
             if (!response.ok) { throw new Error(data.message || 'Download failed.'); }
+            // Trigger the download
             window.location.href = data.url;
         } catch (err) {
             setError(err.message);
@@ -622,7 +735,7 @@ function DownloadPage({ fileId }) {
         <div className="w-full max-w-md mx-auto bg-slate-800/50 p-8 rounded-2xl shadow-xl border border-slate-700">
             {error && !fileMeta ? (
                  <MessageBox message={error} type="error" />
-            ) : fileMeta && (
+            ) : fileMeta ? (
                 <>
                     <div className="text-center">
                         <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-sky-900/30">
@@ -648,16 +761,53 @@ function DownloadPage({ fileId }) {
                         <button
                             type="submit"
                             disabled={isDownloading}
-                            className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-base font-semibold text-white bg-sky-600 hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 disabled:opacity-50 disabled:bg-sky-400"
+                            className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-base font-semibold text-white bg-sky-600 hover:bg-sky-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 disabled:opacity-50 disabled:bg-slate-500"
                         >
                             {isDownloading ? 'Preparing...' : 'Download File'}
                         </button>
                     </form>
-                    {error && <div className="mt-4"><MessageBox message={error} type={error.includes('started') ? 'success' : 'error'} /></div>}
+                    {error && <div className="mt-4"><MessageBox message={error} type="error" onDismiss={() => setError('')}/></div>}
                 </>
-            )}
+            ) : <MessageBox message="File not found or link is invalid." type="error"/>}
         </div>
     );
 }
+
+const PrivacyWarningModal = ({ piiTypes, onClose, onSecure }) => {
+    return (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+            <div className="bg-slate-800 rounded-2xl shadow-xl border border-slate-700 max-w-sm m-4 p-6">
+                <div className="flex items-start gap-4">
+                    <div className="mx-auto flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-yellow-900/30">
+                        <Icon path="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" className="h-6 w-6 text-yellow-400" />
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-semibold text-white">Privacy Warning</h3>
+                        <div className="mt-2">
+                            <p className="text-sm text-slate-300">
+                                AI scan detected potentially sensitive information:
+                            </p>
+                            <ul className="list-disc list-inside mt-2 text-sm text-slate-300 font-medium">
+                                {piiTypes.map(type => <li key={type} className="capitalize">{type.replace(/_/g, ' ').toLowerCase()}</li>)}
+                            </ul>
+                            <p className="mt-3 text-sm text-slate-300">
+                                We strongly recommend adding a password to protect this data.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse gap-3">
+                    <button type="button" onClick={onSecure} className="inline-flex w-full justify-center rounded-md bg-yellow-500 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-yellow-400 sm:w-auto">
+                        Secure with Password
+                    </button>
+                    <button type="button" onClick={onClose} className="mt-3 inline-flex w-full justify-center rounded-md bg-slate-700 px-3 py-2 text-sm font-semibold text-slate-200 shadow-sm ring-1 ring-inset ring-slate-600 hover:bg-slate-600 sm:mt-0 sm:w-auto">
+                        Upload Anyway
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 
 export default App;

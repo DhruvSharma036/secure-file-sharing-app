@@ -9,7 +9,8 @@ const fileSchema = new mongoose.Schema({
   downloadLimit: { type: Number },
   downloadCount: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
-  userId: { type: String, required: true, index: true }, // Add this line
+  userId: { type: String, required: true, index: true }, 
+  suggestedNames: { type: [String], default: [] },
   createdAt: { type: Date, default: Date.now },
 });
 
