@@ -1,142 +1,257 @@
-// Load environment variables from .env file
 require('dotenv').config();
-
 const express = require('express');
 const mongoose = require('mongoose');
 const multer = require('multer');
-const bcrypt = require('bcrypt');
-const cors = require('cors');
-const aws = require('aws-sdk'); // We can still use the AWS SDK!
 const multerS3 = require('multer-s3');
+const aws = require('aws-sdk');
+const bcrypt = require('bcrypt');
 const { nanoid } = require('nanoid');
+const cors = require('cors');
+const cookieParser = require('cookie-parser');
+const jwt = require('jsonwebtoken');
 
-const app = express();
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
-app.use(cors());
-
-// --- Supabase (S3 Compatible) Setup ---
-const s3 = new aws.S3({
-  endpoint: process.env.SUPABASE_S3_ENDPOINT, // The key change is here!
-  accessKeyId: process.env.SUPABASE_ACCESS_KEY_ID,
-  secretAccessKey: process.env.SUPABASE_SECRET_ACCESS_KEY,
-  signatureVersion: 'v4',
-});
-
-// --- Database Setup ---
-const mongoUri = process.env.MONGO_URI;
-mongoose.connect(mongoUri);
+// --- Models ---
 const File = require('./models/File');
 const ShortUrl = require('./models/ShortUrl');
+const User = require('./models/User');
 
-// --- File Storage Setup with Multer-S3 ---
+const app = express();
+
+// --- Middleware Setup ---
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true
+}));
+app.use(express.json());
+app.use(cookieParser());
+app.use(express.urlencoded({ extended: true }));
+
+
+// --- Database Connection ---
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('MongoDB connected successfully.'))
+  .catch(err => console.error('MongoDB connection error:', err));
+
+// --- S3 Compatible Storage Setup (Supabase) ---
+const s3 = new aws.S3({
+  endpoint: process.env.SUPABASE_S3_ENDPOINT,
+  accessKeyId: process.env.SUPABASE_ACCESS_KEY_ID,
+  secretAccessKey: process.env.SUPABASE_SECRET_ACCESS_KEY,
+});
+
 const upload = multer({
   storage: multerS3({
     s3: s3,
     bucket: process.env.SUPABASE_BUCKET_NAME,
-    acl: 'private', // Files should be private
     metadata: function (req, file, cb) {
       cb(null, { fieldName: file.fieldname });
     },
     key: function (req, file, cb) {
-      cb(null, `uploads/${Date.now().toString()}-${file.originalname}`);
-    },
-  }),
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      cb(null, `uploads/${uniqueSuffix}-${file.originalname}`);
+    }
+  })
 });
 
-// --- API Routes (These remain IDENTICAL) ---
+// --- AUTHENTICATION MIDDLEWARE ---
+const authCheck = (req, res, next) => {
+    if (req.cookies.token) {
+        try {
+            const decoded = jwt.verify(req.cookies.token, process.env.JWT_SECRET);
+            req.userId = decoded.userId;
+            req.isGuest = false;
+            next();
+        } catch (error) {
+            // If token is invalid, treat as guest or deny
+             if (req.body.userId || req.query.userId) {
+                req.isGuest = true;
+                req.userId = req.body.userId || req.query.userId;
+                next();
+            } else {
+                return res.status(401).json({ message: 'Invalid token.' });
+            }
+        }
+    } else if (req.body.userId || req.query.userId) { // Check body for uploads, query for dashboard
+        req.isGuest = true;
+        req.userId = req.body.userId || req.query.userId;
+        next();
+    } else {
+        return res.status(401).json({ message: 'No user or guest session identified.' });
+    }
+};
 
-// 1. File Upload Route
-app.post('/api/upload', upload.single('file'), async (req, res) => {
+// --- AUTHENTICATION ROUTES ---
+app.post('/api/auth/register', async (req, res) => {
+    const { username, password } = req.body;
+    
+    // Password validation
+    const passRegex = /^(?=.*[0-9])(?=.*[!@#$%^&*])[a-zA-Z0-9!@#$%^&*]{6,}$/;
+    if (!password || !passRegex.test(password)) {
+        return res.status(400).json({ message: "Password must be at least 6 characters long and include a number and a special character." });
+    }
+
+    try {
+        const existingUser = await User.findOne({ username });
+        if (existingUser) {
+            return res.status(400).json({ message: "Username already exists." });
+        }
+        
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const newUser = new User({ username, password: hashedPassword });
+        await newUser.save();
+
+        // Automatically log in the user after registration
+        const token = jwt.sign({ userId: newUser._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', maxAge: 3600000 });
+        res.status(201).json({ id: newUser._id, username: newUser.username });
+
+    } catch (error) {
+        res.status(500).json({ message: "Server error during registration." });
+    }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+    const { username, password } = req.body;
+    try {
+        const user = await User.findOne({ username });
+        if (!user || !(await bcrypt.compare(password, user.password))) {
+            return res.status(401).json({ message: "Invalid credentials." });
+        }
+
+        const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        res.cookie('token', token, { httpOnly: true, secure: process.env.NODE_ENV === 'production', maxAge: 3600000 });
+        res.status(200).json({ id: user._id, username: user.username });
+
+    } catch (error) {
+        res.status(500).json({ message: "Server error during login." });
+    }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+    res.clearCookie('token');
+    res.status(200).json({ message: "Logged out successfully." });
+});
+
+app.get('/api/auth/me', async (req, res) => {
+    try {
+        const decoded = jwt.verify(req.cookies.token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded.userId).select('-password');
+        if (!user) return res.status(404).json({ message: 'User not found.' });
+        res.status(200).json(user);
+    } catch (error) {
+        res.status(401).json({ message: 'Not authenticated.' });
+    }
+});
+
+
+// --- FILE ROUTES ---
+
+// **FIXED**: Swapped order of upload and authCheck. Multer needs to run first to parse the form data.
+app.post('/api/upload', upload.single('file'), authCheck, async (req, res) => {
   try {
+    const { file } = req;
+    if (!file) {
+      return res.status(400).json({ success: false, message: 'No file uploaded.' });
+    }
+
     const { password, expiresInHours, downloadLimit } = req.body;
-    let expiresAt = null;
-    if (expiresInHours) {
-        expiresAt = new Date(Date.now() + parseInt(expiresInHours, 10) * 60 * 60 * 1000);
+
+    let hashedPassword = null;
+    if (password) {
+      hashedPassword = await bcrypt.hash(password, 10);
     }
-    const fileData = {
-      s3Key: req.file.key,
-      originalName: req.file.originalname,
-      size: req.file.size,
-      expiresAt: expiresAt,
+
+    const newFile = new File({
+      s3Key: file.key,
+      originalName: file.originalname,
+      size: file.size,
+      password: hashedPassword,
+      expiresAt: expiresInHours ? new Date(Date.now() + expiresInHours * 60 * 60 * 1000) : null,
       downloadLimit: downloadLimit ? parseInt(downloadLimit, 10) : null,
-    };
-    if (password != null && password !== '') {
-      fileData.password = await bcrypt.hash(password, 10);
-    }
-    const file = await File.create(fileData);
-    const longUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/download/${file._id}`;
-    const shortId = nanoid(8);
-    await ShortUrl.create({ shortId: shortId, originalUrl: longUrl });
-    const shortUrl = `${process.env.BACKEND_URL || 'http://localhost:5000'}/s/${shortId}`;
-    res.json({ success: true, link: shortUrl, fileId: file._id });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ success: false, message: 'An error occurred during upload.' });
+      userId: req.userId, // Use userId from authCheck middleware
+    });
+    await newFile.save();
+
+    const shortId = nanoid(7);
+    const downloadPageUrl = `${process.env.FRONTEND_URL}/download/${newFile._id}`;
+    
+    const newShortUrl = new ShortUrl({
+        shortId: shortId,
+        originalUrl: downloadPageUrl
+    });
+    await newShortUrl.save();
+    
+    const shortLink = `${process.env.BACKEND_URL}/s/${shortId}`;
+
+    res.status(201).json({ success: true, link: shortLink });
+  } catch (error) {
+    console.error('Upload Error:', error);
+    res.status(500).json({ success: false, message: 'Server error during file upload.' });
   }
 });
 
-// 2. Get File Metadata Route
 app.get('/api/files/:id/meta', async (req, res) => {
     try {
         const file = await File.findById(req.params.id);
-        if (!file) return res.status(404).json({ message: "File not found or link is invalid." });
+        if (!file) { return res.status(404).json({ success: false, message: 'File not found or link is invalid.' }); }
         const isExpiredByTime = file.expiresAt && new Date() > file.expiresAt;
         const isExpiredByDownloads = file.downloadLimit != null && file.downloadCount >= file.downloadLimit;
-        if (isExpiredByTime || isExpiredByDownloads) {
-            await s3.deleteObject({ Bucket: process.env.SUPABASE_BUCKET_NAME, Key: file.s3Key }).promise();
-            await file.deleteOne();
-            return res.status(400).json({ message: "This link has expired." });
-        }
-        res.json({ id: file._id, name: file.originalName, size: file.size, hasPassword: file.password != null });
-    } catch (e) {
-        console.error(e);
-        res.status(500).json({ message: 'Server error.' });
+        if (isExpiredByTime || isExpiredByDownloads) { return res.status(410).json({ success: false, message: 'This link has expired.' }); }
+        res.status(200).json({ id: file._id, name: file.originalName, size: file.size, hasPassword: !!file.password });
+    } catch (error) {
+        console.error('Get Metadata Error:', error);
+        res.status(500).json({ success: false, message: 'Server error.' });
     }
 });
 
-// 3. Get Secure Download URL Route
 app.post('/api/files/:id/download', async (req, res) => {
     try {
         const file = await File.findById(req.params.id);
-        const { password } = req.body;
-        if (!file) return res.status(404).json({ message: "File not found." });
+        if (!file) { return res.status(404).json({ success: false, message: 'File not found.' }); }
         const isExpiredByTime = file.expiresAt && new Date() > file.expiresAt;
         const isExpiredByDownloads = file.downloadLimit != null && file.downloadCount >= file.downloadLimit;
-        if (isExpiredByTime || isExpiredByDownloads) return res.status(400).json({ message: "This link has expired." });
-        if (file.password != null) {
-            if (password == null || !(await bcrypt.compare(password, file.password))) {
-                 return res.status(401).json({ message: "Incorrect password." });
+        if (isExpiredByTime || isExpiredByDownloads) { return res.status(410).json({ success: false, message: 'This link has expired.' }); }
+        if (file.password) {
+            const { password } = req.body;
+            if (!password || !(await bcrypt.compare(password, file.password))) {
+                return res.status(401).json({ success: false, message: 'Incorrect password.' });
             }
         }
-        file.downloadCount++;
+        file.downloadCount += 1;
         await file.save();
-        const url = s3.getSignedUrl('getObject', {
-            Bucket: process.env.SUPABASE_BUCKET_NAME,
-            Key: file.s3Key,
-            Expires: 60,
-            ResponseContentDisposition: `attachment; filename="${file.originalName}"`
-        });
-        res.json({ url });
-    } catch (e) {
-        console.error(e);
-        res.status(500).json({ message: 'Server error.' });
+        const params = { Bucket: process.env.SUPABASE_BUCKET_NAME, Key: file.s3Key, Expires: 60 * 5 };
+        const downloadUrl = s3.getSignedUrl('getObject', params);
+        res.status(200).json({ success: true, url: downloadUrl, name: file.originalName });
+    } catch (error) {
+        console.error('Download Error:', error);
+        res.status(500).json({ success: false, message: 'Server error during download.' });
     }
 });
 
-// 4. Short URL Redirect Route
 app.get('/s/:shortId', async (req, res) => {
     try {
         const urlEntry = await ShortUrl.findOne({ shortId: req.params.shortId });
-        if (urlEntry == null) return res.status(404).send('URL not found');
-        res.redirect(urlEntry.originalUrl);
-    } catch (e) {
-        console.error(e);
+        if (urlEntry) { return res.redirect(302, urlEntry.originalUrl); } 
+        else { return res.status(404).send('Link not found.'); }
+    } catch (error) {
+        console.error('Redirect error:', error);
         res.status(500).send('Server error');
     }
 });
 
-const PORT = process.env.PORT || 5000;
+app.get('/api/files', authCheck, async (req, res) => {
+  try {
+    const files = await File.find({ userId: req.userId }).sort({ createdAt: -1 });
+    res.status(200).json(files);
+  } catch (error) {
+    console.error('Error fetching files for dashboard:', error);
+    res.status(500).json({ success: false, message: 'Server error while fetching files.' });
+  }
+});
+
+
+// --- Server Start ---
+const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

@@ -9,6 +9,8 @@ const fileSchema = new mongoose.Schema({
   downloadLimit: { type: Number },
   downloadCount: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
+  userId: { type: String, required: true, index: true }, // Add this line
+  createdAt: { type: Date, default: Date.now },
 });
 
 module.exports = mongoose.model('File', fileSchema);
