@@ -26,7 +26,7 @@ app.use(cookieParser());
 
 const allowedOrigins = [
   'http://localhost:3000', // For local development
-  'secure-fileshare.netlify.app' 
+  'https://secure-fileshare.netlify.app' 
 ]
 
 const corsOptions = {
