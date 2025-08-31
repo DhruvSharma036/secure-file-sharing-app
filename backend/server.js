@@ -10,7 +10,6 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 
-// --- Google Gemini API Helper ---
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest"});
@@ -23,11 +22,10 @@ const app = express();
 app.use(express.json({ limit: '100mb' })); 
 app.use(cookieParser());
 
-
 const allowedOrigins = [
-  'http://localhost:3000', // For local development
+  'http://localhost:3000',
   'https://secure-fileshare.netlify.app' 
-]
+];
 
 const corsOptions = {
   origin: function (origin, callback) {
@@ -62,6 +60,14 @@ const upload = multer({
     }
   })
 });
+
+// --- FIX: Root Route & Health Check ---
+// This gives a friendly "OK" message to anyone visiting the base URL,
+// including the Uptime Robot monitoring service.
+app.get('/', (req, res) => {
+  res.status(200).json({ status: 'ok', message: 'Secure Share Backend is running.' });
+});
+
 
 // --- Middleware ---
 const authenticate = (req, res, next) => {
@@ -118,7 +124,6 @@ app.post('/api/upload', (req, res, next) => {
     const userId = req.user ? req.user.id : req.guestId;
     
     let hashedPassword = null;
-  
     if (password) hashedPassword = await bcrypt.hash(password, 10);
 
     const newFile = new File({
@@ -133,13 +138,11 @@ app.post('/api/upload', (req, res, next) => {
     await newFile.save();
 
     const shortId = nanoid(7);
-    
     const downloadPageUrl = `${process.env.FRONTEND_URL}/download/${newFile._id}`;
     
     const newShortUrl = new ShortUrl({ shortId, originalUrl: downloadPageUrl });
     await newShortUrl.save();
     
-   
     const shortLink = `${process.env.BACKEND_URL}/s/${shortId}`;
     res.status(201).json({ success: true, link: shortLink });
   } catch (error) {
@@ -204,7 +207,6 @@ app.post('/api/files/:id/download', async (req, res) => {
         if (isExpiredByTime || isExpiredByDownloads) {
             return res.status(410).json({ message: "This link has expired." });
         }
-       
         if (file.password) {
             const { password } = req.body;
             if (!password || !(await bcrypt.compare(password, file.password))) {
@@ -216,7 +218,7 @@ app.post('/api/files/:id/download', async (req, res) => {
         const params = {
             Bucket: process.env.SUPABASE_BUCKET_NAME,
             Key: file.s3Key,
-            Expires: 60 * 5 
+            Expires: 60 * 5 // 5 minutes
         };
         const downloadUrl = s3.getSignedUrl('getObject', params);
         res.status(200).json({ success: true, url: downloadUrl, name: file.originalName });
@@ -261,7 +263,6 @@ app.post('/api/auth/register', async (req, res) => {
         await user.save();
         
         const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '1d' });
-        // FIX: Added sameSite: 'none' to cookie options. This is essential for cross-domain authentication.
         res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none', maxAge: 24 * 60 * 60 * 1000 });
         res.status(201).json({ id: user._id, username: user.username });
     } catch (error) {
@@ -277,7 +278,6 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(401).json({ message: 'Invalid credentials.' });
         }
         const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '1d' });
-        // FIX: Added sameSite: 'none' to cookie options. This is essential for cross-domain authentication.
         res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none', maxAge: 24 * 60 * 60 * 1000 });
         res.status(200).json({ id: user._id, username: user.username });
     } catch (error) {
@@ -300,6 +300,7 @@ app.get('/api/auth/me', authenticate, async (req, res) => {
     }
 });
 
+
 if (!process.env.FRONTEND_URL || !process.env.BACKEND_URL) {
     console.error("FATAL ERROR: FRONTEND_URL and BACKEND_URL environment variables are not set.");
     process.exit(1);
@@ -310,3 +311,4 @@ const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+    
