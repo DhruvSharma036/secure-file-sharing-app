@@ -47,6 +47,7 @@ const s3 = new aws.S3({
   endpoint: process.env.SUPABASE_S3_ENDPOINT,
   accessKeyId: process.env.SUPABASE_ACCESS_KEY_ID,
   secretAccessKey: process.env.SUPABASE_SECRET_ACCESS_KEY,
+  signatureVersion:'v4',
 });
 
 const upload = multer({
@@ -61,9 +62,6 @@ const upload = multer({
   })
 });
 
-// --- FIX: Root Route & Health Check ---
-// This gives a friendly "OK" message to anyone visiting the base URL,
-// including the Uptime Robot monitoring service.
 app.get('/', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Secure Share Backend is running.' });
 });
