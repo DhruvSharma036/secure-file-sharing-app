@@ -1,13 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
+// --- API Configuration ---
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001';
 
+// --- Reusable Components ---
 
 const AnimatedBackground = () => (
   <div className="fixed inset-0 -z-10 h-full w-full bg-slate-950">
+    {/* Enhanced with more blobs for a more dynamic gradient effect */}
     <div className="absolute bottom-0 left-[-20%] right-0 top-[-10%] h-[500px] w-[500px] rounded-full bg-[radial-gradient(circle_farthest-side,rgba(96,165,250,0.1),rgba(255,255,255,0))] animate-blob-one"></div>
     <div className="absolute bottom-0 right-[-20%] top-[-10%] h-[500px] w-[500px] rounded-full bg-[radial-gradient(circle_farthest-side,rgba(96,165,250,0.1),rgba(255,255,255,0))] animate-blob-two"></div>
+    <div className="absolute bottom-[-20%] left-[20%] h-[500px] w-[500px] rounded-full bg-[radial-gradient(circle_farthest-side,rgba(168,85,247,0.1),rgba(255,255,255,0))] animate-blob-three"></div>
+    <div className="absolute bottom-[40%] right-[5%] h-[400px] w-[400px] rounded-full bg-[radial-gradient(circle_farthest-side,rgba(250,96,190,0.1),rgba(255,255,255,0))] animate-blob-four"></div>
   </div>
 );
 
@@ -51,8 +56,21 @@ const Spinner = () => (
     </div>
 );
 
+const Footer = () => (
+  <footer className="w-full text-center py-4 mt-12">
+      <a 
+          href="www.linkedin.com/in/dhruv-sharma-468747285" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-sm text-slate-400 hover:text-sky-400 transition-colors"
+      >
+          Made by Dhruv
+      </a>
+  </footer>
+);
 
-// --- Main App Component ---
+
+
 function App() {
   const [page, setPage] = useState('upload');
   const [downloadFileId, setDownloadFileId] = useState(null);
@@ -120,7 +138,12 @@ function App() {
         return <DownloadPage fileId={downloadFileId} />;
     }
     if (!user) {
-        return <AuthPage page={authPage} setPage={setAuthPage} onAuthSuccess={setUser} onGuestLogin={handleGuestLogin} />;
+        // FIX: Wrapped AuthPage in a flex container to center it vertically and horizontally
+        return (
+          <div className="flex-grow flex items-center justify-center">
+            <AuthPage page={authPage} setPage={setAuthPage} onAuthSuccess={setUser} onGuestLogin={handleGuestLogin} />
+          </div>
+        );
     }
     switch (page) {
       case 'upload':
@@ -147,7 +170,15 @@ function App() {
   if (appIsLoading) {
     return (
       <>
-        <style>{`@keyframes loading-bar-animation {0% { transform: translateX(-100%); } 100% { transform: translateX(100%); }} .animate-loading-bar { animation: loading-bar-animation 1.5s infinite linear; }`}</style>
+        <style>{`
+          @keyframes loading-bar-animation {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+          }
+          .animate-loading-bar {
+            animation: loading-bar-animation 1.5s infinite linear;
+          }
+        `}</style>
         <AnimatedBackground />
         <div className="min-h-screen flex items-center justify-center">
           <LoadingBar />
@@ -158,8 +189,20 @@ function App() {
 
   return (
     <>
+       {/*keyframe animations for the new background blobs */}
+      <style>{`
+        @keyframes blob-one-animation { 0% { transform: translate(0, 0) scale(1); } 33% { transform: translate(30px, -50px) scale(1.1); } 66% { transform: translate(-20px, 20px) scale(0.9); } 100% { transform: translate(0, 0) scale(1); } }
+        @keyframes blob-two-animation { 0% { transform: translate(0, 0) scale(1); } 33% { transform: translate(-30px, 40px) scale(1.1); } 66% { transform: translate(20px, -20px) scale(0.9); } 100% { transform: translate(0, 0) scale(1); } }
+        @keyframes blob-three-animation { 0% { transform: translate(0, 0) scale(1); } 33% { transform: translate(40px, 60px) scale(1.2); } 66% { transform: translate(-50px, -30px) scale(0.8); } 100% { transform: translate(0, 0) scale(1); } }
+        @keyframes blob-four-animation { 0% { transform: translate(0, 0) scale(1); } 33% { transform: translate(-20px, -40px) scale(1.1); } 66% { transform: translate(30px, 50px) scale(1); } 100% { transform: translate(0, 0) scale(1); } }
+        .animate-blob-one { animation: blob-one-animation 15s infinite ease-in-out; }
+        .animate-blob-two { animation: blob-two-animation 15s infinite ease-in-out 3s; }
+        .animate-blob-three { animation: blob-three-animation 20s infinite ease-in-out 5s; }
+        .animate-blob-four { animation: blob-four-animation 18s infinite ease-in-out 7s; }
+      `}</style>
       <AnimatedBackground />
-      <div className="min-h-screen font-sans text-slate-200 relative z-10">
+      {/* FIX: Main container is now a flex column to push footer to the bottom */}
+      <div className="min-h-screen font-sans text-slate-200 relative z-10 flex flex-col">
         <div className="w-full bg-slate-900/50 backdrop-blur-sm border-b border-slate-800 sticky top-0 z-20">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
@@ -183,9 +226,9 @@ function App() {
           </div>
         </div>
         
-        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow flex flex-col">
           {user && page !== 'download' && (
-             <header className="max-w-md mx-auto mb-8">
+             <header className="max-w-md mx-auto mb-8 w-full">
                 <nav className="bg-slate-800 p-2 rounded-xl shadow-md">
                     <div className="flex justify-around items-center gap-2">
                         <NavButton targetPage="upload" currentPage={page} setPage={setPage} iconPath="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" label="Upload" />
@@ -194,10 +237,11 @@ function App() {
                 </nav>
             </header>
           )}
-          <main>
+          <main className="flex-grow flex flex-col">
             {renderPage()}
           </main>
         </div>
+        <Footer />
       </div>
     </>
   );
@@ -475,10 +519,9 @@ function UploadForm({ user, isMammothLoaded }) {
   
   const isDocx = file && (file.name.toLowerCase().endsWith('.docx'));
 
-  // FIX: More robust logic to determine if the analysis button should be shown.
   const isAnalyzableFile = file && (
     (file.type || '').startsWith('text/') || 
-    (file.type || '').includes('json') || // More lenient check for JSON
+    (file.type || '').includes('json') || 
     ['.txt', '.json', '.log', '.docx'].some(ext => file.name.toLowerCase().endsWith(ext))
   );
   
