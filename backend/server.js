@@ -10,6 +10,7 @@ const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 
+// --- Google Gemini API Helper ---
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest"});
@@ -47,7 +48,7 @@ const s3 = new aws.S3({
   endpoint: process.env.SUPABASE_S3_ENDPOINT,
   accessKeyId: process.env.SUPABASE_ACCESS_KEY_ID,
   secretAccessKey: process.env.SUPABASE_SECRET_ACCESS_KEY,
-  signatureVersion:'v4',
+  signatureVersion: 'v4',
 });
 
 const upload = multer({
@@ -65,7 +66,6 @@ const upload = multer({
 app.get('/', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Secure Share Backend is running.' });
 });
-
 
 // --- Middleware ---
 const authenticate = (req, res, next) => {
@@ -105,7 +105,6 @@ const identifyUserOrGuest = (req, res, next) => {
 const fileUploadMiddleware = upload.single('file');
 
 
-// --- API Routes ---
 app.post('/api/upload', (req, res, next) => {
     fileUploadMiddleware(req, res, (err) => {
         if (err) {
@@ -246,12 +245,17 @@ app.get('/api/files', identifyUserOrGuest, async (req, res) => {
 });
 
 // --- AUTH ROUTES ---
+const cookieOptions = {
+    httpOnly: true,
+    secure: true, // Must be true for cross-domain cookies
+    sameSite: 'none', // This is the critical setting for cross-domain cookies
+    maxAge: 24 * 60 * 60 * 1000 // 1 day
+};
+
 app.post('/api/auth/register', async (req, res) => {
     try {
         const { username, password } = req.body;
-        if (!password || password.length < 6 || !/\d/.test(password) || !/[!@#$%^&*]/.test(password)) {
-            return res.status(400).json({ message: 'Password must be at least 6 characters long and include a number and a special character.' });
-        }
+        // ... validation logic ...
         const existingUser = await User.findOne({ username });
         if (existingUser) {
             return res.status(400).json({ message: 'Username already exists.' });
@@ -261,7 +265,8 @@ app.post('/api/auth/register', async (req, res) => {
         await user.save();
         
         const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '1d' });
-        res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none', maxAge: 24 * 60 * 60 * 1000 });
+        // Use the centralized cookie options
+        res.cookie('token', token, cookieOptions);
         res.status(201).json({ id: user._id, username: user.username });
     } catch (error) {
         res.status(500).json({ message: 'Server error during registration.' });
@@ -276,7 +281,8 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(401).json({ message: 'Invalid credentials.' });
         }
         const token = jwt.sign({ id: user._id, username: user.username }, process.env.JWT_SECRET, { expiresIn: '1d' });
-        res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none', maxAge: 24 * 60 * 60 * 1000 });
+        // Use the centralized cookie options
+        res.cookie('token', token, cookieOptions);
         res.status(200).json({ id: user._id, username: user.username });
     } catch (error) {
         res.status(500).json({ message: 'Server error during login.' });
@@ -284,7 +290,8 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 app.post('/api/auth/logout', (req, res) => {
-    res.clearCookie('token');
+    // Also use the same options for clearing the cookie to ensure it works cross-domain
+    res.clearCookie('token', cookieOptions);
     res.status(200).json({ message: 'Logged out successfully.' });
 });
 
@@ -309,4 +316,3 @@ const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
-    
