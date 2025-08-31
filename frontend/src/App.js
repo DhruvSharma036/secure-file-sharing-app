@@ -8,11 +8,11 @@ const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001';
 
 const AnimatedBackground = () => (
   <div className="fixed inset-0 -z-10 h-full w-full bg-slate-950">
-    {/* Enhanced with more blobs for a more dynamic gradient effect */}
-    <div className="absolute bottom-0 left-[-20%] right-0 top-[-10%] h-[500px] w-[500px] rounded-full bg-[radial-gradient(circle_farthest-side,rgba(96,165,250,0.1),rgba(255,255,255,0))] animate-blob-one"></div>
-    <div className="absolute bottom-0 right-[-20%] top-[-10%] h-[500px] w-[500px] rounded-full bg-[radial-gradient(circle_farthest-side,rgba(96,165,250,0.1),rgba(255,255,255,0))] animate-blob-two"></div>
-    <div className="absolute bottom-[-20%] left-[20%] h-[500px] w-[500px] rounded-full bg-[radial-gradient(circle_farthest-side,rgba(168,85,247,0.1),rgba(255,255,255,0))] animate-blob-three"></div>
-    <div className="absolute bottom-[40%] right-[5%] h-[400px] w-[400px] rounded-full bg-[radial-gradient(circle_farthest-side,rgba(250,96,190,0.1),rgba(255,255,255,0))] animate-blob-four"></div>
+    {/* FIX: Increased opacity of gradient blobs to make them more prominent */}
+    <div className="absolute bottom-0 left-[-20%] right-0 top-[-10%] h-[500px] w-[500px] rounded-full bg-[radial-gradient(circle_farthest-side,rgba(96,165,250,0.2),rgba(255,255,255,0))] animate-blob-one"></div>
+    <div className="absolute bottom-0 right-[-20%] top-[-10%] h-[500px] w-[500px] rounded-full bg-[radial-gradient(circle_farthest-side,rgba(96,165,250,0.2),rgba(255,255,255,0))] animate-blob-two"></div>
+    <div className="absolute bottom-[-20%] left-[20%] h-[500px] w-[500px] rounded-full bg-[radial-gradient(circle_farthest-side,rgba(168,85,247,0.2),rgba(255,255,255,0))] animate-blob-three"></div>
+    <div className="absolute bottom-[40%] right-[5%] h-[400px] w-[400px] rounded-full bg-[radial-gradient(circle_farthest-side,rgba(250,96,190,0.2),rgba(255,255,255,0))] animate-blob-four"></div>
   </div>
 );
 
@@ -57,18 +57,21 @@ const Spinner = () => (
 );
 
 const Footer = () => (
-  <footer className="w-full text-center py-4 mt-12">
-      <a 
-          href="www.linkedin.com/in/dhruv-sharma-468747285" 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="text-sm text-slate-400 hover:text-sky-400 transition-colors"
-      >
-          Made by Dhruv
-      </a>
-  </footer>
+    <footer className="w-full text-center p-6 mt-auto bg-slate-900/50 backdrop-blur-sm border-t border-slate-800">
+        <p className="text-sm text-slate-400">
+            © {new Date().getFullYear()} Secure Share. All Rights Reserved.
+            <br />
+            <a 
+                href="https://www.linkedin.com/in/dhruv-sharma-468747285"
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="font-semibold text-sky-400 hover:text-sky-300 transition-colors"
+            >
+                Developed by Dhruv Sharma
+            </a>
+        </p>
+    </footer>
 );
-
 
 
 function App() {
@@ -138,7 +141,6 @@ function App() {
         return <DownloadPage fileId={downloadFileId} />;
     }
     if (!user) {
-        // FIX: Wrapped AuthPage in a flex container to center it vertically and horizontally
         return (
           <div className="flex-grow flex items-center justify-center">
             <AuthPage page={authPage} setPage={setAuthPage} onAuthSuccess={setUser} onGuestLogin={handleGuestLogin} />
@@ -189,19 +191,17 @@ function App() {
 
   return (
     <>
-       {/*keyframe animations for the new background blobs */}
       <style>{`
         @keyframes blob-one-animation { 0% { transform: translate(0, 0) scale(1); } 33% { transform: translate(30px, -50px) scale(1.1); } 66% { transform: translate(-20px, 20px) scale(0.9); } 100% { transform: translate(0, 0) scale(1); } }
         @keyframes blob-two-animation { 0% { transform: translate(0, 0) scale(1); } 33% { transform: translate(-30px, 40px) scale(1.1); } 66% { transform: translate(20px, -20px) scale(0.9); } 100% { transform: translate(0, 0) scale(1); } }
         @keyframes blob-three-animation { 0% { transform: translate(0, 0) scale(1); } 33% { transform: translate(40px, 60px) scale(1.2); } 66% { transform: translate(-50px, -30px) scale(0.8); } 100% { transform: translate(0, 0) scale(1); } }
         @keyframes blob-four-animation { 0% { transform: translate(0, 0) scale(1); } 33% { transform: translate(-20px, -40px) scale(1.1); } 66% { transform: translate(30px, 50px) scale(1); } 100% { transform: translate(0, 0) scale(1); } }
-        .animate-blob-one { animation: blob-one-animation 15s infinite ease-in-out; }
-        .animate-blob-two { animation: blob-two-animation 15s infinite ease-in-out 3s; }
-        .animate-blob-three { animation: blob-three-animation 20s infinite ease-in-out 5s; }
-        .animate-blob-four { animation: blob-four-animation 18s infinite ease-in-out 7s; }
+        .animate-blob-one { animation: blob-one-animation 12s infinite ease-in-out; }
+        .animate-blob-two { animation: blob-two-animation 12s infinite ease-in-out 3s; }
+        .animate-blob-three { animation: blob-three-animation 16s infinite ease-in-out 5s; }
+        .animate-blob-four { animation: blob-four-animation 14s infinite ease-in-out 7s; }
       `}</style>
       <AnimatedBackground />
-      {/* FIX: Main container is now a flex column to push footer to the bottom */}
       <div className="min-h-screen font-sans text-slate-200 relative z-10 flex flex-col">
         <div className="w-full bg-slate-900/50 backdrop-blur-sm border-b border-slate-800 sticky top-0 z-20">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
